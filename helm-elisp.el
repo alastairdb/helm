@@ -765,7 +765,7 @@ a string, i.e. the `symbol-name' of any existing symbol."
     :persistent-help "Toggle describe function / C-u C-j: Toggle advice"))
 
 (defun helm-advice-candidates ()
-  (cl-loop for (fname) in ad-advised-functions
+  (cl-loop for fname in ad-advised-functions
         for function = (intern fname)
         append
         (cl-loop for class in ad-advice-classes append
