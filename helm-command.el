@@ -38,9 +38,8 @@
   :group 'helm-command
   :type 'boolean)
 
-(defcustom helm-M-x-use-completion-styles nil
-  "Use `completion-styles' and dynamic completion when non nil.
-It is disable by default as it is a regression starting from Emacs-27."
+(defcustom helm-M-x-use-completion-styles t
+  "Use `completion-styles' and dynamic completion when non nil."
   :group 'helm-command
   :type 'boolean)
 
@@ -126,15 +125,15 @@ algorithm."
           unless (or (get sym 'helm-only) (get sym 'no-helm-mx))
           collect
           (cons (cond ((and (string-match "^M-x" key) local-key)
-                       (format "%s (%s)"
+                       (format "%s %s"
                                disp (propertize
-                                     local-key
-                                     'face 'helm-M-x-key)))
+                                     " " 'display
+                                     (propertize local-key 'face 'helm-M-x-key))))
                       ((string-match "^M-x" key) disp)
-                      (t (format "%s (%s)"
+                      (t (format "%s %s"
                                  disp (propertize
-                                       key
-                                       'face 'helm-M-x-key))))
+                                       " " 'display
+                                       (propertize key 'face 'helm-M-x-key)))))
                 cand)
           into ls
           finally return
@@ -236,6 +235,10 @@ default to `extended-command-history'."
                                  .
                                  (lambda (candidates)
                                    (sort candidates #'helm-generic-sort-fn))))))
+         (helm-fuzzy-sort-fn (lambda (candidates _source)
+                               ;; Sort on real candidate otherwise
+                               ;; "symbol (<binding>)" is used when sorting.
+                               (helm-fuzzy-matching-default-sort-fn-1 candidates t)))
          (sources `(,(helm-make-source "Emacs Commands history" 'helm-M-x-class
                        :match-dynamic helm-M-x-use-completion-styles
                        :candidates
@@ -246,7 +249,14 @@ default to `extended-command-history'."
                             (lambda (str) (funcall pred (intern-soft str)))
                             nil 'nosort t)
                          (lambda () (helm-comp-read-get-candidates
-                                     (or history extended-command-history) pred)))
+                                     ;; History should be quoted to
+                                     ;; force `helm-comp-read-get-candidates'
+                                     ;; to use predicate against
+                                     ;; symbol and not string.
+                                     (or history 'extended-command-history)
+                                     ;; Ensure using empty string to
+                                     ;; not defeat helm matching fns [1]
+                                     pred nil nil "")))
                        :fuzzy-match (null helm-M-x-use-completion-styles))
                     ,(helm-make-source "Emacs Commands" 'helm-M-x-class
                        :match-dynamic helm-M-x-use-completion-styles
@@ -255,7 +265,9 @@ default to `extended-command-history'."
                            (helm-dynamic-completion
                             collection pred
                             nil metadata t)
-                         (lambda () (helm-comp-read-get-candidates collection pred)))
+                         (lambda () (helm-comp-read-get-candidates
+                                     ;; [1] Same comment as above.
+                                     collection pred nil nil "")))
                        :fuzzy-match (null helm-M-x-use-completion-styles))))
          (prompt (concat (cond
                           ((eq helm-M-x-prefix-argument '-) "- ")

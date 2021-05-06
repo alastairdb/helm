@@ -251,7 +251,7 @@ and vectors, so don't use strings to define them."
     (define-key map (kbd "C-c %")      'helm-exchange-minibuffer-and-header-line)
     (define-key map (kbd "C-c C-y")    'helm-yank-selection)
     (define-key map (kbd "C-c C-k")    'helm-kill-selection-and-quit)
-    (define-key map (kbd "C-c C-i")    'helm-copy-to-buffer)
+    (define-key map (kbd "C-c C-i")    'helm-insert-or-copy)
     (define-key map (kbd "C-c C-f")    'helm-follow-mode)
     (define-key map (kbd "C-c C-u")    'helm-refresh)
     (define-key map (kbd "C-c >")      'helm-toggle-truncate-line)
@@ -1285,7 +1285,7 @@ emacs-26. Anyway, 'helm-flex is not provided in
 
 Finally Helm provides two user variables to control
 `completion-styles' usage: `helm-completion-style' and
-`helm-completion-syles-alist'.  Both variables are customizable.
+`helm-completion-styles-alist'.  Both variables are customizable.
 The former allows retrieving previous Helm behavior if needed, by
 setting it to `helm' or `helm-fuzzy', default being `emacs' which
 allows dynamic completion and usage of `completion-styles'.  The
@@ -1297,7 +1297,7 @@ helmized commands.  File completion in `read-file-name' family
 doesn't obey completion-styles and has its own file completion
 implementation. Native Helm commands using `completion-styles'
 doesn't obey `helm-completion-style' and
-`helm-completion-syles-alist' (e.g., helm-M-x).
+`helm-completion-styles-alist' (e.g., helm-M-x).
 
 Also for a better control of styles in native Helm sources (not
 helmized by helm-mode) using :match-dynamic,
@@ -1349,7 +1349,7 @@ matching or fuzzy matching (see [[Matching in Helm][Matching in
 Helm]]).
 
 Completion is not done dynamically (against `helm-pattern')
-because backend functions (i.e. `competion-at-point-functions')
+because backend functions (i.e. `completion-at-point-functions')
 are not aware of Helm matching methods.
 
 By behaving like this, the benefit is that you can fully use Helm
@@ -1602,7 +1602,7 @@ line without executing the persistent action.
 |\\[helm-quit-and-find-file]|Drop into `helm-find-files'.
 |\\[helm-kill-selection-and-quit]|Kill display value of candidate and quit (with prefix arg, kill the real value).
 |\\[helm-yank-selection]|Yank current selection into pattern.
-|\\[helm-copy-to-buffer]|Copy selected candidate at point in current buffer.
+|\\[helm-insert-or-copy]|Insert or copy marked candidates (C-u) .
 |\\[helm-follow-mode]|Toggle automatic execution of persistent action.
 |\\[helm-follow-action-forward]|Run persistent action then select next line.
 |\\[helm-follow-action-backward]|Run persistent action then select previous line.
@@ -2279,9 +2279,11 @@ when you want the `display-to-real' function(s) to be applied."
              (disp (unless (= beg end) (funcall disp-fn beg (1- end))))
              (src  (or source (helm-get-current-source)))
              (selection (helm-acond (force-display-part disp)
+                                    ;; helm-realvalue always takes precedence
+                                    ;; over display-to-real.
+                                    ((get-text-property beg 'helm-realvalue) it)
                                     ((assoc-default 'display-to-real src)
                                      (helm-apply-functions-from-source source it disp))
-                                    ((get-text-property beg 'helm-realvalue) it)
                                     (t disp))))
         (unless (equal selection "")
           (helm-log "selection = %S" selection)
@@ -3908,7 +3910,13 @@ WARNING: Do not use this mode yourself, it is internal to Helm."
 (defun helm-cleanup ()
   "Clean up the mess when Helm exit or quit."
   (helm-log "start cleanup")
-  (with-current-buffer helm-buffer
+  (with-selected-window
+      ;; When exiting with `helm-execute-action-at-once-if-one',
+      ;; `helm-window' may not be created and we endup with an error
+      ;; e.g. in eshell completion when only one candidate to complete
+      ;; so fallback to selected-window in such cases.
+      (or (get-buffer-window helm-buffer)
+          (selected-window))
     (let ((frame (selected-frame)))
       (setq cursor-type t)
       ;; Ensure restoring default-value of mode-line to allow user
@@ -4533,6 +4541,8 @@ emacs-27 to provide such scoring in emacs<27."
                           for disp = (helm-candidate-get-display c)
                           while (< count limit)
                           for target = (if (helm-get-attr 'match-on-real source)
+                                           ;; Let's fails on error in
+                                           ;; case next block returns nil.
                                            (or (cdr-safe c)
                                                (get-text-property 0 'helm-realvalue disp))
                                          disp)
@@ -7276,20 +7286,22 @@ perform actions."
      (format "%s" (helm-get-selection nil (not arg))))))
 (put 'helm-kill-selection-and-quit 'helm-only t)
 
-(defun helm-copy-to-buffer ()
-  "Copy selection or marked candidates to `helm-current-buffer'.
-Note that the real values of candidates are copied and not the
-display values."
-  (interactive)
+(defun helm-insert-or-copy (&optional arg)
+  "Insert selection or marked candidates in current buffer.
+
+With a prefix arg copy marked candidates to kill-ring.
+The real value of each candidate is used."
+  (interactive "P")
   (with-helm-alive-p
     (helm-run-after-exit
      (lambda (cands)
        (with-helm-current-buffer
-         (insert (mapconcat (lambda (c)
-                              (format "%s" c))
-                            cands "\n"))))
+         (let ((sels (mapconcat (lambda (c)
+                                  (format "%s" c))
+                                cands "\n")))
+         (if arg (kill-new sels) (insert sels)))))
      (helm-marked-candidates))))
-(put 'helm-copy-to-buffer 'helm-only t)
+(put 'helm-insert-or-copy 'helm-only t)
 
 
 ;;; Follow-mode: Automatic execution of persistent-action
