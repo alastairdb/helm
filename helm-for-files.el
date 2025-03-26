@@ -203,7 +203,7 @@ Colorize only symlinks, directories and files."
            for type = (and (or (null isremote)
                                (and (null helm-for-files-tramp-not-fancy)
                                     (file-remote-p i nil t)))
-                           (car (file-attributes i)))
+                           (ignore-error permission-denied (car (file-attributes i))))
            collect
            (cond (;; No fancy display on remote files with basic predicates.
                   (and (null type) isremote) (cons disp i))
